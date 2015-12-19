@@ -34,47 +34,9 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <QStringList>
-#include <QMap>
-#include <QtCore/QFile>
-#include <QtCore/QDir>
-#include <QtCore/QDateTime>
-#include <QtCore/QJsonArray>
-#include <QtCore/QJsonObject>
-#include <QtCore/QJsonDocument>
-
-#include <iostream>
+#include "types.h"
 
 QT_BEGIN_NAMESPACE
-
-enum PlatformFlag {
-    WindowsBased = 0x1000,
-    UnixBased = 0x2000,
-    IntelBased = 0x4000,
-    ArmBased = 0x8000,
-    MinGW = 0x10000
-};
-
-enum Platform {
-    Windows = WindowsBased + IntelBased,
-    WindowsMinGW = WindowsBased + IntelBased + MinGW,
-    WinRtIntel = WindowsBased + IntelBased + 1,
-    WinRtArm = WindowsBased + ArmBased + 2,
-    WinPhoneIntel = WindowsBased + IntelBased + 3,
-    WinPhoneArm = WindowsBased + ArmBased + 4,
-    WinCEIntel = WindowsBased + IntelBased + 5,
-    WinCEArm = WindowsBased + ArmBased + 6,
-    Unix = UnixBased,
-    UnknownPlatform
-};
-
-enum ListOption {
-    ListNone = 0,
-    ListSource,
-    ListTarget,
-    ListRelative,
-    ListMapping
-};
 
 inline std::wostream &operator<<(std::wostream &str, const QString &s)
 {
@@ -169,11 +131,7 @@ QString findInPath(const QString &file);
 QMap<QString, QString> queryQMakeAll(QString *errorMessage);
 QString queryQMake(const QString &variable, QString *errorMessage);
 
-enum DebugMatchMode {
-    MatchDebug,
-    MatchRelease,
-    MatchDebugOrRelease
-};
+
 
 QStringList findSharedLibraries(const QDir &directory, Platform platform,
                                 DebugMatchMode debugMatchMode,
@@ -217,14 +175,6 @@ QString findD3dCompiler(Platform platform, const QString &qtBinDir, unsigned wor
 bool patchQtCore(const QString &path, QString *errorMessage);
 
 extern int optVerboseLevel;
-
-// Recursively update a file or directory, matching DirectoryFileEntryFunction against the QDir
-// to obtain the files.
-enum UpdateFileFlag  {
-    ForceUpdateFile = 0x1,
-    SkipUpdateFile = 0x2,
-    RemoveEmptyQmlDirectories = 0x4
-};
 
 template <class DirectoryFileEntryFunction>
 bool updateFile(const QString &sourceFileName,
