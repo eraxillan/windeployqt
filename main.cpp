@@ -39,54 +39,9 @@
 #include <QtCore/QCommandLineOption>
 
 #include "qtmodules.h"
+#include "options.h"
 
 QT_BEGIN_NAMESPACE
-
-static const char webKitProcessC[] = "QtWebProcess";
-static const char webEngineProcessC[] = "QtWebEngineProcess";
-
-static inline QString webProcessBinary(const char *binaryName, Platform p)
-{
-    const QString webProcess = QLatin1String(binaryName);
-    return (p & WindowsBased) ? webProcess + QStringLiteral(".exe") : webProcess;
-}
-
-static QByteArray formatQtModules(quint64 mask, bool option = false)
-{
-    QByteArray result;
-    const size_t qtModulesCount = sizeof(qtModuleEntries)/sizeof(QtModuleEntry);
-    for (size_t i = 0; i < qtModulesCount; ++i) {
-        if (mask & qtModuleEntries[i].module) {
-            if (!result.isEmpty())
-                result.append(' ');
-            result.append(option ? qtModuleEntries[i].option : qtModuleEntries[i].libraryName);
-        }
-    }
-    return result;
-}
-
-static Platform platformFromMkSpec(const QString &xSpec)
-{
-    if (xSpec == QLatin1String("linux-g++"))
-        return Unix;
-    if (xSpec.startsWith(QLatin1String("win32-")))
-        return xSpec.contains(QLatin1String("g++")) ? WindowsMinGW : Windows;
-    if (xSpec.startsWith(QLatin1String("winrt-x")))
-        return WinRtIntel;
-    if (xSpec.startsWith(QLatin1String("winrt-arm")))
-        return WinRtArm;
-    if (xSpec.startsWith(QLatin1String("winphone-x")))
-        return WinPhoneIntel;
-    if (xSpec.startsWith(QLatin1String("winphone-arm")))
-        return WinPhoneArm;
-    if (xSpec.startsWith(QLatin1String("wince"))) {
-        if (xSpec.contains(QLatin1String("-x86-")))
-            return WinCEIntel;
-        if (xSpec.contains(QLatin1String("-arm")))
-            return WinCEArm;
-    }
-    return UnknownPlatform;
-}
 
 // Helpers for exclusive options, "-foo", "--no-foo"
 enum ExlusiveOptionValue {
@@ -114,73 +69,6 @@ static ExlusiveOptionValue parseExclusiveOptions(const QCommandLineParser *parse
 
 bool optHelp = false;
 ExlusiveOptionValue optWebKit2 = OptionAuto;
-
-struct Options {
-    enum DebugDetection {
-        DebugDetectionAuto,
-        DebugDetectionForceDebug,
-        DebugDetectionForceRelease
-    };
-
-    enum AngleDetection {
-        AngleDetectionAuto,
-        AngleDetectionForceOn,
-        AngleDetectionForceOff
-    };
-
-    Options() : plugins(true), libraries(true), quickImports(true), translations(true), systemD3dCompiler(true), compilerRunTime(false)
-              , angleDetection(AngleDetectionAuto), platform(Windows), additionalLibraries(0), disabledLibraries(0)
-              , updateFileFlags(0), json(0), list(ListNone), debugDetection(DebugDetectionAuto)
-              , debugMatchAll(false) {}
-
-    bool plugins;
-    bool libraries;
-    bool quickImports;
-    bool translations;
-    bool systemD3dCompiler;
-    bool compilerRunTime;
-    AngleDetection angleDetection;
-    Platform platform;
-    quint64 additionalLibraries;
-    quint64 disabledLibraries;
-    quint64 updateFileFlags;
-    QStringList qmlDirectories; // Project's QML files.
-    QString directory;
-    QString translationsDirectory; // Translations target directory
-    QString libraryDirectory;
-    QStringList binaries;
-    JsonOutput *json;
-    ListOption list;
-    DebugDetection debugDetection;
-    bool debugMatchAll;
-
-    inline bool isWinRtOrWinPhone() const {
-        return (platform == WinPhoneArm || platform == WinPhoneIntel
-                || platform == WinRtArm || platform == WinRtIntel);
-    }
-};
-
-// Return binary from folder
-static inline QString findBinary(const QString &directory, Platform platform)
-{
-    QDir dir(QDir::cleanPath(directory));
-
-    const QStringList nameFilters = (platform & WindowsBased) ?
-        QStringList(QStringLiteral("*.exe")) : QStringList();
-    foreach (const QString &binary, dir.entryList(nameFilters, QDir::Files | QDir::Executable)) {
-        if (!binary.contains(QLatin1String(webKitProcessC), Qt::CaseInsensitive)
-            && !binary.contains(QLatin1String(webEngineProcessC), Qt::CaseInsensitive)) {
-            return dir.filePath(binary);
-        }
-    }
-    return QString();
-}
-
-static QString msgFileDoesNotExist(const QString & file)
-{
-    return QLatin1Char('"') + QDir::toNativeSeparators(file)
-        + QStringLiteral("\" does not exist.");
-}
 
 enum CommandLineParseFlag {
     CommandLineParseError = 0x1,
@@ -488,19 +376,6 @@ static inline int parseArguments(const QStringList &arguments, QCommandLineParse
     return 0;
 }
 
-// Simple line wrapping at 80 character boundaries.
-static inline QString lineBreak(QString s)
-{
-    for (int i = 80; i < s.size(); i += 80) {
-        const int lastBlank = s.lastIndexOf(QLatin1Char(' '), i);
-        if (lastBlank >= 0) {
-            s[lastBlank] = QLatin1Char('\n');
-            i = lastBlank + 1;
-        }
-    }
-    return s;
-}
-
 static inline QString helpText(const QCommandLineParser &p)
 {
     QString result = p.helpText();
@@ -517,17 +392,6 @@ static inline QString helpText(const QCommandLineParser &p)
     moduleHelp += QLatin1Char('\n');
     result.replace(moduleStart, argumentsStart - moduleStart, moduleHelp);
     return result;
-}
-
-static inline bool isQtModule(const QString &libName)
-{
-    // Match Standard modules, Qt5XX.dll, Qt[Commercial]Charts.dll and special cases.
-    return libName.size() > 2
-        && ((libName.startsWith(QLatin1String("Qt"), Qt::CaseInsensitive) && libName.at(2).isDigit())
-            || libName.startsWith(QLatin1String("QtCommercial"), Qt::CaseInsensitive)
-            || libName.startsWith(QLatin1String("QtCharts"), Qt::CaseInsensitive)
-            || libName.startsWith(QLatin1String("DataVisualization"), Qt::CaseInsensitive)
-            || libName.startsWith(QLatin1String("Enginio"), Qt::CaseInsensitive));
 }
 
 // Helper for recursively finding all dependent Qt libraries.
@@ -606,55 +470,6 @@ private:
     DllDirectoryFileEntryFunction m_dllFilter;
 };
 
-static inline quint64 qtModuleForPlugin(const QString &subDirName)
-{
-    if (subDirName == QLatin1String("accessible") || subDirName == QLatin1String("iconengines")
-        || subDirName == QLatin1String("imageformats") || subDirName == QLatin1String("platforms")
-        || subDirName == QLatin1String("platforminputcontexts")) {
-        return QtGuiModule;
-    }
-    if (subDirName == QLatin1String("bearer"))
-        return QtNetworkModule;
-    if (subDirName == QLatin1String("sqldrivers"))
-        return QtSqlModule;
-    if (subDirName == QLatin1String("audio") || subDirName == QLatin1String("mediaservice") || subDirName == QLatin1String("playlistformats"))
-        return QtMultimediaModule;
-    if (subDirName == QLatin1String("printsupport"))
-        return QtPrintSupportModule;
-    if (subDirName == QLatin1String("scenegraph"))
-        return QtQuickModule;
-    if (subDirName == QLatin1String("qmltooling"))
-        return QtQuickModule | QtQmlToolingModule;
-    if (subDirName == QLatin1String("qml1tooling"))
-        return QtDeclarativeModule;
-    if (subDirName == QLatin1String("position"))
-        return QtPositioningModule;
-    if (subDirName == QLatin1String("geoservices"))
-        return QtLocationModule;
-    if (subDirName == QLatin1String("sensors") || subDirName == QLatin1String("sensorgestures"))
-        return QtSensorsModule;
-    if (subDirName == QLatin1String("qtwebengine"))
-        return QtWebEngineModule | QtWebEngineCoreModule | QtWebEngineWidgetsModule;
-    if (subDirName == QLatin1String("sceneparsers"))
-        return Qt3DRendererModule;
-    return 0; // "designer"
-}
-
-static quint64 qtModule(const QString &module)
-{
-    quint64 bestMatch = 0;
-    int bestMatchLength = 0;
-    const size_t qtModulesCount = sizeof(qtModuleEntries)/sizeof(QtModuleEntry);
-    for (size_t i = 0; i < qtModulesCount; ++i) {
-        const QString libraryName = QLatin1String(qtModuleEntries[i].libraryName);
-        if (libraryName.size() > bestMatchLength && module.contains(libraryName, Qt::CaseInsensitive)) {
-            bestMatch = qtModuleEntries[i].module;
-            bestMatchLength = libraryName.size();
-        }
-    }
-    return bestMatch;
-}
-
 QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules,
                           const QString &qtPluginsDirName, const QString &libraryLocation,
                           DebugMatchMode debugMatchModeIn, Platform platform, QString *platformPlugin)
@@ -732,21 +547,6 @@ QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules,
     return result;
 }
 
-static QStringList translationNameFilters(quint64 modules, const QString &prefix)
-{
-    QStringList result;
-    const size_t qtModulesCount = sizeof(qtModuleEntries)/sizeof(QtModuleEntry);
-    for (size_t i = 0; i < qtModulesCount; ++i) {
-        if ((qtModuleEntries[i].module & modules) && qtModuleEntries[i].translation) {
-            const QString name = QLatin1String(qtModuleEntries[i].translation) +
-                                 QLatin1Char('_') +  prefix + QStringLiteral(".qm");
-            if (!result.contains(name))
-                result.push_back(name);
-        }
-    }
-    return result;
-}
-
 static bool deployTranslations(const QString &sourcePath, quint64 usedQtModules,
                                const QString &target, unsigned flags, QString *errorMessage)
 {
@@ -796,24 +596,6 @@ struct DeployResult
     quint64 usedQtLibraries;
     quint64 deployedQtLibraries;
 };
-
-static QString libraryPath(const QString &libraryLocation, const char *name,
-                           const QString &qtLibInfix, Platform platform, bool debug)
-{
-    QString result = libraryLocation + QLatin1Char('/');
-    if (platform & WindowsBased) {
-        result += QLatin1String(name);
-        result += qtLibInfix;
-        if (debug)
-            result += QLatin1Char('d');
-    } else if (platform & UnixBased) {
-        result += QStringLiteral("lib");
-        result += QLatin1String(name);
-        result += qtLibInfix;
-    }
-    result += sharedLibrarySuffix(platform);
-    return result;
-}
 
 static QStringList compilerRunTimeLibs(Platform platform, bool isDebug, unsigned wordSize)
 {
@@ -886,26 +668,6 @@ static QStringList compilerRunTimeLibs(Platform platform, bool isDebug, unsigned
         break;
     }
     return result;
-}
-
-static inline int qtVersion(const QMap<QString, QString> &qmakeVariables)
-{
-    const QString versionString = qmakeVariables.value(QStringLiteral("QT_VERSION"));
-    const QChar dot = QLatin1Char('.');
-    const int majorVersion = versionString.section(dot, 0, 0).toInt();
-    const int minorVersion = versionString.section(dot, 1, 1).toInt();
-    const int patchVersion = versionString.section(dot, 2, 2).toInt();
-    return (majorVersion << 16) | (minorVersion << 8) | patchVersion;
-}
-
-// Determine the Qt lib infix from the library path of "Qt5Core<qtblibinfix>[d].dll".
-static inline QString qtlibInfixFromCoreLibName(const QString &path, bool isDebug, Platform platform)
-{
-    const int startPos = path.lastIndexOf(QLatin1Char('/')) + 8;
-    int endPos = path.lastIndexOf(QLatin1Char('.'));
-    if (isDebug && (platform & WindowsBased))
-        endPos--;
-    return endPos > startPos ? path.mid(startPos, endPos - startPos) : QString();
 }
 
 static DeployResult deploy(const Options &options,
@@ -1240,8 +1002,8 @@ static bool deployWebEngine(const QMap<QString, QString> &qmakeVariables,
                                              "qtwebengine_resources_100p.pak",
                                              "qtwebengine_resources_200p.pak"};
 
-    std::wcout << "Deploying: " << webEngineProcessC << "...\n";
-    if (!deployWebProcess(qmakeVariables, webEngineProcessC, options, errorMessage)) {
+    std::wcout << "Deploying: " << Options::webEngineProcessC << "...\n";
+    if (!deployWebProcess(qmakeVariables, Options::webEngineProcessC, options, errorMessage)) {
         std::wcerr << errorMessage << '\n';
         return false;
     }
@@ -1338,8 +1100,8 @@ int main(int argc, char **argv)
             || ((result.deployedQtLibraries & QtWebKitModule)
                 && (result.directlyUsedQtLibraries & QtQuickModule)))) {
         if (optVerboseLevel)
-            std::wcout << "Deploying: " << webKitProcessC << "...\n";
-        if (!deployWebProcess(qmakeVariables, webKitProcessC, options, &errorMessage)) {
+            std::wcout << "Deploying: " << Options::webKitProcessC << "...\n";
+        if (!deployWebProcess(qmakeVariables, Options::webKitProcessC, options, &errorMessage)) {
             std::wcerr << errorMessage << '\n';
             return 1;
         }

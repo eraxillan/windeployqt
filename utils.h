@@ -35,6 +35,7 @@
 #define UTILS_H
 
 #include "types.h"
+#include "options.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -131,7 +132,107 @@ QString findInPath(const QString &file);
 QMap<QString, QString> queryQMakeAll(QString *errorMessage);
 QString queryQMake(const QString &variable, QString *errorMessage);
 
+inline QString webProcessBinary(const char *binaryName, Platform p)
+{
+    const QString webProcess = QLatin1String(binaryName);
+    return (p & WindowsBased) ? webProcess + QStringLiteral(".exe") : webProcess;
+}
 
+inline Platform platformFromMkSpec(const QString &xSpec)
+{
+    if (xSpec == QLatin1String("linux-g++"))
+        return Unix;
+    if (xSpec.startsWith(QLatin1String("win32-")))
+        return xSpec.contains(QLatin1String("g++")) ? WindowsMinGW : Windows;
+    if (xSpec.startsWith(QLatin1String("winrt-x")))
+        return WinRtIntel;
+    if (xSpec.startsWith(QLatin1String("winrt-arm")))
+        return WinRtArm;
+    if (xSpec.startsWith(QLatin1String("winphone-x")))
+        return WinPhoneIntel;
+    if (xSpec.startsWith(QLatin1String("winphone-arm")))
+        return WinPhoneArm;
+    if (xSpec.startsWith(QLatin1String("wince"))) {
+        if (xSpec.contains(QLatin1String("-x86-")))
+            return WinCEIntel;
+        if (xSpec.contains(QLatin1String("-arm")))
+            return WinCEArm;
+    }
+    return UnknownPlatform;
+}
+
+// Return binary from folder
+inline QString findBinary(const QString &directory, Platform platform)
+{
+    QDir dir(QDir::cleanPath(directory));
+
+    const QStringList nameFilters = (platform & WindowsBased) ?
+        QStringList(QStringLiteral("*.exe")) : QStringList();
+    foreach (const QString &binary, dir.entryList(nameFilters, QDir::Files | QDir::Executable)) {
+        if (!binary.contains(QLatin1String(Options::webKitProcessC), Qt::CaseInsensitive)
+            && !binary.contains(QLatin1String(Options::webEngineProcessC), Qt::CaseInsensitive)) {
+            return dir.filePath(binary);
+        }
+    }
+    return QString();
+}
+
+inline QString msgFileDoesNotExist(const QString & file)
+{
+    return QLatin1Char('"') + QDir::toNativeSeparators(file)
+        + QStringLiteral("\" does not exist.");
+}
+
+// Simple line wrapping at 80 character boundaries.
+inline QString lineBreak(QString s)
+{
+    for (int i = 80; i < s.size(); i += 80) {
+        const int lastBlank = s.lastIndexOf(QLatin1Char(' '), i);
+        if (lastBlank >= 0) {
+            s[lastBlank] = QLatin1Char('\n');
+            i = lastBlank + 1;
+        }
+    }
+    return s;
+}
+
+inline QString libraryPath(const QString &libraryLocation, const char *name,
+                           const QString &qtLibInfix, Platform platform, bool debug)
+{
+    QString result = libraryLocation + QLatin1Char('/');
+    if (platform & WindowsBased) {
+        result += QLatin1String(name);
+        result += qtLibInfix;
+        if (debug)
+            result += QLatin1Char('d');
+    } else if (platform & UnixBased) {
+        result += QStringLiteral("lib");
+        result += QLatin1String(name);
+        result += qtLibInfix;
+    }
+    result += sharedLibrarySuffix(platform);
+    return result;
+}
+
+inline int qtVersion(const QMap<QString, QString> &qmakeVariables)
+{
+    const QString versionString = qmakeVariables.value(QStringLiteral("QT_VERSION"));
+    const QChar dot = QLatin1Char('.');
+    const int majorVersion = versionString.section(dot, 0, 0).toInt();
+    const int minorVersion = versionString.section(dot, 1, 1).toInt();
+    const int patchVersion = versionString.section(dot, 2, 2).toInt();
+    return (majorVersion << 16) | (minorVersion << 8) | patchVersion;
+}
+
+// Determine the Qt lib infix from the library path of "Qt5Core<qtblibinfix>[d].dll".
+inline QString qtlibInfixFromCoreLibName(const QString &path, bool isDebug, Platform platform)
+{
+    const int startPos = path.lastIndexOf(QLatin1Char('/')) + 8;
+    int endPos = path.lastIndexOf(QLatin1Char('.'));
+    if (isDebug && (platform & WindowsBased))
+        endPos--;
+    return endPos > startPos ? path.mid(startPos, endPos - startPos) : QString();
+}
 
 QStringList findSharedLibraries(const QDir &directory, Platform platform,
                                 DebugMatchMode debugMatchMode,
