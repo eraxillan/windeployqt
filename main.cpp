@@ -196,19 +196,18 @@ static inline int parseArguments(const QStringList &arguments, QCommandLineParse
 
     OptionMaskVector enabledModules;
     OptionMaskVector disabledModules;
-    const size_t qtModulesCount = sizeof(qtModuleEntries)/sizeof(QtModuleEntry);
-    for (size_t i = 0; i < qtModulesCount; ++i) {
-        const QString option = QLatin1String(qtModuleEntries[i].option);
-        const QString name = QLatin1String(qtModuleEntries[i].libraryName);
+    for (size_t i = 0; i < qtModuleEntryCount(); ++i) {
+        const QString option = QLatin1String(qtModuleEntryByIndex(i).option);
+        const QString name = QLatin1String(qtModuleEntryByIndex(i).libraryName);
         const QString enabledDescription = QStringLiteral("Add ") + name + QStringLiteral(" module.");
         CommandLineOptionPtr enabledOption(new QCommandLineOption(option, enabledDescription));
         parser->addOption(*enabledOption.data());
-        enabledModules.push_back(OptionMaskPair(enabledOption, qtModuleEntries[i].module));
+        enabledModules.push_back(OptionMaskPair(enabledOption, qtModuleEntryByIndex(i).module));
 
         const QString disabledDescription = QStringLiteral("Remove ") + name + QStringLiteral(" module.");
         CommandLineOptionPtr disabledOption(new QCommandLineOption(QStringLiteral("no-") + option,
                                                                    disabledDescription));
-        disabledModules.push_back(OptionMaskPair(disabledOption, qtModuleEntries[i].module));
+        disabledModules.push_back(OptionMaskPair(disabledOption, qtModuleEntryByIndex(i).module));
         parser->addOption(*disabledOption.data());
     }
 
@@ -271,7 +270,7 @@ static inline int parseArguments(const QStringList &arguments, QCommandLineParse
     if (parser->isSet(dryRunOption))
         options->updateFileFlags |= SkipUpdateFile;
 
-    for (size_t i = 0; i < qtModulesCount; ++i) {
+    for (size_t i = 0; i < qtModuleEntryCount(); ++i) {
         if (parser->isSet(*enabledModules.at(int(i)).first.data()))
             options->additionalLibraries |= enabledModules.at(int(i)).second;
         if (parser->isSet(*disabledModules.at(int(i)).first.data()))
@@ -824,12 +823,11 @@ static DeployResult deploy(const Options &options,
 
     // Apply options flags and re-add library names.
     QString qtGuiLibrary;
-    const size_t qtModulesCount = sizeof(qtModuleEntries)/sizeof(QtModuleEntry);
-    for (size_t i = 0; i < qtModulesCount; ++i) {
-        if (result.deployedQtLibraries & qtModuleEntries[i].module) {
-            const QString library = libraryPath(libraryLocation, qtModuleEntries[i].libraryName, qtLibInfix, options.platform, isDebug);
+    for (size_t i = 0; i < qtModuleEntryCount(); ++i) {
+        if (result.deployedQtLibraries & qtModuleEntryByIndex(i).module) {
+            const QString library = libraryPath(libraryLocation, qtModuleEntryByIndex(i).libraryName, qtLibInfix, options.platform, isDebug);
             deployedQtLibraries.append(library);
-            if (qtModuleEntries[i].module == QtGuiModule)
+            if (qtModuleEntryByIndex(i).module == QtGuiModule)
                 qtGuiLibrary = library;
         }
     }
