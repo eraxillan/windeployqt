@@ -33,50 +33,11 @@
 
 #include "utils.h"
 #include "qmlutils.h"
-
-#include <QtCore/QCoreApplication>
-#include <QtCore/QCommandLineParser>
-#include <QtCore/QCommandLineOption>
-
 #include "qtmodules.h"
 #include "options.h"
 #include "commandlineparser.h"
 
 QT_BEGIN_NAMESPACE
-
-// Helper for recursively finding all dependent Qt libraries.
-static bool findDependentQtLibraries(const QString &qtBinDir, const QString &binary, Platform platform,
-                                     QString *errorMessage, QStringList *result,
-                                     unsigned *wordSize = 0, bool *isDebug = 0,
-                                     int *directDependencyCount = 0, int recursionDepth = 0)
-{
-    QStringList dependentLibs;
-    if (directDependencyCount)
-        *directDependencyCount = 0;
-    if (!readExecutable(binary, platform, errorMessage, &dependentLibs, wordSize, isDebug)) {
-        errorMessage->prepend(QLatin1String("Unable to find dependent libraries of ") +
-                              QDir::toNativeSeparators(binary) + QLatin1String(" :"));
-        return false;
-    }
-    // Filter out the Qt libraries. Note that depends.exe finds libs from optDirectory if we
-    // are run the 2nd time (updating). We want to check against the Qt bin dir libraries
-    const int start = result->size();
-    foreach (const QString &lib, dependentLibs) {
-        if (isQtModule(lib)) {
-            const QString path = normalizeFileName(qtBinDir + QLatin1Char('/') + QFileInfo(lib).fileName());
-            if (!result->contains(path))
-                result->append(path);
-        }
-    }
-    const int end = result->size();
-    if (directDependencyCount)
-        *directDependencyCount = end - start;
-    // Recurse
-    for (int i = start; i < end; ++i)
-        if (!findDependentQtLibraries(qtBinDir, result->at(i), platform, errorMessage, result, 0, 0, 0, recursionDepth + 1))
-            return false;
-    return true;
-}
 
 // Base class to filter debug/release Windows DLLs for functions to be passed to updateFile().
 // Tries to pre-filter by namefilter and does check via PE.

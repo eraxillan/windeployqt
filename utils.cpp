@@ -33,6 +33,7 @@
 
 #include "utils.h"
 #include "elfreader.h"
+#include "qtmodules.h"
 
 #include <QtCore/QString>
 #include <QtCore/QDebug>
@@ -967,6 +968,36 @@ bool patchQtCore(const QString &path, QString *errorMessage)
                     QDir::toNativeSeparators(path));
         return false;
     }
+    return true;
+}
+
+bool findDependentQtLibraries(const QString &qtBinDir, const QString &binary, Platform platform, QString *errorMessage, QStringList *result, unsigned *wordSize, bool *isDebug, int *directDependencyCount, int recursionDepth)
+{
+    QStringList dependentLibs;
+    if (directDependencyCount)
+        *directDependencyCount = 0;
+    if (!readExecutable(binary, platform, errorMessage, &dependentLibs, wordSize, isDebug)) {
+        errorMessage->prepend(QLatin1String("Unable to find dependent libraries of ") +
+                              QDir::toNativeSeparators(binary) + QLatin1String(" :"));
+        return false;
+    }
+    // Filter out the Qt libraries. Note that depends.exe finds libs from optDirectory if we
+    // are run the 2nd time (updating). We want to check against the Qt bin dir libraries
+    const int start = result->size();
+    foreach (const QString &lib, dependentLibs) {
+        if (isQtModule(lib)) {
+            const QString path = normalizeFileName(qtBinDir + QLatin1Char('/') + QFileInfo(lib).fileName());
+            if (!result->contains(path))
+                result->append(path);
+        }
+    }
+    const int end = result->size();
+    if (directDependencyCount)
+        *directDependencyCount = end - start;
+    // Recurse
+    for (int i = start; i < end; ++i)
+        if (!findDependentQtLibraries(qtBinDir, result->at(i), platform, errorMessage, result, 0, 0, 0, recursionDepth + 1))
+            return false;
     return true;
 }
 

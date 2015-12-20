@@ -415,6 +415,12 @@ bool updateFile(const QString &sourceFileName,
     return true;
 }
 
+// Helper for recursively finding all dependent Qt libraries.
+bool findDependentQtLibraries(const QString &qtBinDir, const QString &binary, Platform platform,
+                                     QString *errorMessage, QStringList *result,
+                                     unsigned *wordSize = 0, bool *isDebug = 0,
+                                     int *directDependencyCount = 0, int recursionDepth = 0);
+
 // Base class to filter files by name filters functions to be passed to updateFile().
 class NameFilterFileEntryFunction {
 public:
