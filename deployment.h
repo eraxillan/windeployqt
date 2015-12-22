@@ -69,6 +69,7 @@
 #include "types.h"
 
 class JsonOutput;
+struct Options;
 
 QT_BEGIN_NAMESPACE
 
@@ -113,6 +114,38 @@ private:
     NameFilterFileEntryFunction m_qmlNameFilter;
     DllDirectoryFileEntryFunction m_dllFilter;
 };
+
+struct DeployResult
+{
+    DeployResult() : success(false), directlyUsedQtLibraries(0), usedQtLibraries(0), deployedQtLibraries(0) {}
+    operator bool() const { return success; }
+
+    bool success;
+    quint64 directlyUsedQtLibraries;
+    quint64 usedQtLibraries;
+    quint64 deployedQtLibraries;
+};
+
+QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules,
+                          const QString &qtPluginsDirName, const QString &libraryLocation,
+                          DebugMatchMode debugMatchModeIn, Platform platform, QString *platformPlugin);
+
+bool deployTranslations(const QString &sourcePath, quint64 usedQtModules,
+                        const QString &target, unsigned flags, QString *errorMessage);
+
+QStringList compilerRunTimeLibs(Platform platform, bool isDebug, unsigned wordSize);
+
+DeployResult deploy(const Options &options,
+                    const QMap<QString, QString> &qmakeVariables,
+                    QString *errorMessage);
+
+
+bool deployWebProcess(const QMap<QString, QString> &qmakeVariables,
+                      const char *binaryName,
+                      const Options &sourceOptions, QString *errorMessage);
+
+bool deployWebEngine(const QMap<QString, QString> &qmakeVariables,
+                     const Options &options, QString *errorMessage);
 
 QT_END_NAMESPACE
 
