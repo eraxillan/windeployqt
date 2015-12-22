@@ -32,54 +32,14 @@
 ****************************************************************************/
 
 #include "utils.h"
+#include "jsonoutput.h"
 #include "qmlutils.h"
 #include "qtmodules.h"
 #include "options.h"
 #include "commandlineparser.h"
+#include "deployment.h"
 
 QT_BEGIN_NAMESPACE
-
-// Base class to filter debug/release Windows DLLs for functions to be passed to updateFile().
-// Tries to pre-filter by namefilter and does check via PE.
-class DllDirectoryFileEntryFunction {
-public:
-    explicit DllDirectoryFileEntryFunction(Platform platform,
-                                           DebugMatchMode debugMatchMode, const QString &prefix = QString()) :
-        m_platform(platform), m_debugMatchMode(debugMatchMode), m_prefix(prefix) {}
-
-    QStringList operator()(const QDir &dir) const
-        { return findSharedLibraries(dir, m_platform, m_debugMatchMode, m_prefix); }
-
-private:
-    const Platform m_platform;
-    const DebugMatchMode m_debugMatchMode;
-    const QString m_prefix;
-};
-
-// File entry filter function for updateFile() that returns a list of files for
-// QML import trees: DLLs (matching debgug) and .qml/,js, etc.
-class QmlDirectoryFileEntryFunction {
-public:
-    explicit QmlDirectoryFileEntryFunction(Platform platform, DebugMatchMode debugMatchMode, bool skipQmlSources = false)
-        : m_qmlNameFilter(QmlDirectoryFileEntryFunction::qmlNameFilters(skipQmlSources))
-        , m_dllFilter(platform, debugMatchMode)
-    {}
-
-    QStringList operator()(const QDir &dir) const { return m_dllFilter(dir) + m_qmlNameFilter(dir);  }
-
-private:
-    static inline QStringList qmlNameFilters(bool skipQmlSources)
-    {
-        QStringList result;
-        result << QStringLiteral("qmldir") << QStringLiteral("*.qmltypes");
-        if (!skipQmlSources)
-            result << QStringLiteral("*.js") <<  QStringLiteral("*.qml") << QStringLiteral("*.png");
-        return result;
-    }
-
-    NameFilterFileEntryFunction m_qmlNameFilter;
-    DllDirectoryFileEntryFunction m_dllFilter;
-};
 
 QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules,
                           const QString &qtPluginsDirName, const QString &libraryLocation,

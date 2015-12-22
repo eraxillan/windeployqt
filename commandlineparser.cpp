@@ -34,6 +34,7 @@
 #include "commandlineparser.h"
 #include "qtmodules.h"
 #include "utils.h"
+#include "jsonoutput.h"
 
 QT_BEGIN_NAMESPACE
 

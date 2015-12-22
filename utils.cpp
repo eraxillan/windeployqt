@@ -34,6 +34,7 @@
 #include "utils.h"
 #include "elfreader.h"
 #include "qtmodules.h"
+#include "jsonoutput.h"
 
 #include <QtCore/QString>
 #include <QtCore/QDebug>

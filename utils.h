@@ -49,69 +49,6 @@ inline std::wostream &operator<<(std::wostream &str, const QString &s)
     return str;
 }
 
-// Container class for JSON output
-class JsonOutput
-{
-    typedef QPair<QString, QString> SourceTargetMapping;
-    typedef QList<SourceTargetMapping> SourceTargetMappings;
-
-public:
-    void addFile(const QString &source, const QString &target)
-    {
-        m_files.append(SourceTargetMapping(source, target));
-    }
-
-    void removeTargetDirectory(const QString &targetDirectory)
-    {
-        for (int i = m_files.size() - 1; i >= 0; --i) {
-            if (m_files.at(i).second == targetDirectory)
-                m_files.removeAt(i);
-        }
-    }
-
-    QByteArray toJson() const
-    {
-        QJsonObject document;
-        QJsonArray files;
-        foreach (const SourceTargetMapping &mapping, m_files) {
-            QJsonObject object;
-            object.insert(QStringLiteral("source"), QDir::toNativeSeparators(mapping.first));
-            object.insert(QStringLiteral("target"), QDir::toNativeSeparators(mapping.second));
-            files.append(object);
-        }
-        document.insert(QStringLiteral("files"), files);
-        return QJsonDocument(document).toJson();
-    }
-    QByteArray toList(ListOption option, const QDir &base) const
-    {
-        QByteArray list;
-        foreach (const SourceTargetMapping &mapping, m_files) {
-            const QString source = QDir::toNativeSeparators(mapping.first);
-            const QString fileName = QFileInfo(mapping.first).fileName();
-            const QString target = QDir::toNativeSeparators(mapping.second) + QDir::separator() + fileName;
-            switch (option) {
-            case ListNone:
-                break;
-            case ListSource:
-                list += source.toUtf8() + '\n';
-                break;
-            case ListTarget:
-                list += target.toUtf8() + '\n';
-                break;
-            case ListRelative:
-                list += QDir::toNativeSeparators(base.relativeFilePath(target)).toUtf8() + '\n';
-                break;
-            case ListMapping:
-                list += '"' + source.toUtf8() + "\" \"" + QDir::toNativeSeparators(base.relativeFilePath(target)).toUtf8() + "\"\n";
-                break;
-            }
-        }
-        return list;
-    }
-private:
-    SourceTargetMappings m_files;
-};
-
 #ifdef Q_OS_WIN
 QString normalizeFileName(const QString &name);
 QString winErrorMessage(unsigned long error);
@@ -420,22 +357,6 @@ bool findDependentQtLibraries(const QString &qtBinDir, const QString &binary, Pl
                                      QString *errorMessage, QStringList *result,
                                      unsigned *wordSize = 0, bool *isDebug = 0,
                                      int *directDependencyCount = 0, int recursionDepth = 0);
-
-// Base class to filter files by name filters functions to be passed to updateFile().
-class NameFilterFileEntryFunction {
-public:
-    explicit NameFilterFileEntryFunction(const QStringList &nameFilters) : m_nameFilters(nameFilters) {}
-    QStringList operator()(const QDir &dir) const { return dir.entryList(m_nameFilters, QDir::Files); }
-
-private:
-    const QStringList m_nameFilters;
-};
-
-// Convenience for all files.
-inline bool updateFile(const QString &sourceFileName, const QString &targetDirectory, unsigned flags, JsonOutput *json, QString *errorMessage)
-{
-    return updateFile(sourceFileName, NameFilterFileEntryFunction(QStringList()), targetDirectory, flags, json, errorMessage);
-}
 
 QT_END_NAMESPACE
 
