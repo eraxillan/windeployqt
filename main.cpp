@@ -99,8 +99,8 @@ int main(int argc, char **argv)
     if (clParser.optWebKit2())
         options.additionalLibraries |= QtWebKitModule;
 
-
-    const DeployResult result = deploy(options, qmakeVariables, &errorMessage);
+    Deployment worker(options, qmakeVariables);
+    const DeployResult result = worker.deploy(options, &errorMessage);
     if (!result) {
         std::wcerr << errorMessage << '\n';
         return 1;
@@ -112,14 +112,14 @@ int main(int argc, char **argv)
                 && (result.directlyUsedQtLibraries & QtQuickModule)))) {
         if (optVerboseLevel)
             std::wcout << "Deploying: " << Options::webKitProcessC << "...\n";
-        if (!deployWebProcess(qmakeVariables, Options::webKitProcessC, options, &errorMessage)) {
+        if (!worker.deployWebProcess(Options::webKitProcessC, &errorMessage)) {
             std::wcerr << errorMessage << '\n';
             return 1;
         }
     }
 
     if (result.deployedQtLibraries & QtWebEngineModule) {
-        if (!deployWebEngine(qmakeVariables, options, &errorMessage)) {
+        if (!worker.deployWebEngine( &errorMessage)) {
             std::wcerr << errorMessage << '\n';
             return 1;
         }

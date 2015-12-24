@@ -67,53 +67,11 @@
 #define DEPLOYMENT_H
 
 #include "types.h"
+#include "options.h"
 
 class JsonOutput;
-struct Options;
 
 QT_BEGIN_NAMESPACE
-
-// Base class to filter files by name filters functions to be passed to updateFile().
-class NameFilterFileEntryFunction {
-public:
-    explicit NameFilterFileEntryFunction(const QStringList &nameFilters);
-    QStringList operator()(const QDir &dir) const;
-
-private:
-    const QStringList m_nameFilters;
-};
-
-// Convenience for all files.
-bool updateFile(const QString &sourceFileName, const QString &targetDirectory, unsigned flags, JsonOutput *json, QString *errorMessage);
-
-// Base class to filter debug/release Windows DLLs for functions to be passed to updateFile().
-// Tries to pre-filter by namefilter and does check via PE.
-class DllDirectoryFileEntryFunction {
-public:
-    explicit DllDirectoryFileEntryFunction(Platform platform, DebugMatchMode debugMatchMode, const QString &prefix = QString());
-
-    QStringList operator()(const QDir &dir) const;
-
-private:
-    const Platform m_platform;
-    const DebugMatchMode m_debugMatchMode;
-    const QString m_prefix;
-};
-
-// File entry filter function for updateFile() that returns a list of files for
-// QML import trees: DLLs (matching debgug) and .qml/,js, etc.
-class QmlDirectoryFileEntryFunction {
-public:
-    explicit QmlDirectoryFileEntryFunction(Platform platform, DebugMatchMode debugMatchMode, bool skipQmlSources = false);
-
-    QStringList operator()(const QDir &dir) const;
-
-private:
-    static inline QStringList qmlNameFilters(bool skipQmlSources);
-
-    NameFilterFileEntryFunction m_qmlNameFilter;
-    DllDirectoryFileEntryFunction m_dllFilter;
-};
 
 struct DeployResult
 {
@@ -126,26 +84,24 @@ struct DeployResult
     quint64 deployedQtLibraries;
 };
 
-QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules,
-                          const QString &qtPluginsDirName, const QString &libraryLocation,
-                          DebugMatchMode debugMatchModeIn, Platform platform, QString *platformPlugin);
+class Deployment
+{
+public:
+    Deployment(const Options &options, const QMap<QString, QString> &qmakeVariables);
 
-bool deployTranslations(const QString &sourcePath, quint64 usedQtModules,
-                        const QString &target, unsigned flags, QString *errorMessage);
+    DeployResult deploy(const Options &options, QString *errorMessage);
+    bool deployWebProcess(const char *binaryName, QString *errorMessage);
+    bool deployWebEngine(QString *errorMessage);
 
-QStringList compilerRunTimeLibs(Platform platform, bool isDebug, unsigned wordSize);
+private:
+    QStringList compilerRunTimeLibs(Platform platform, bool isDebug, unsigned wordSize);
+    bool deployTranslations(const QString &sourcePath, quint64 usedQtModules,
+                            const QString &target, unsigned flags, QString *errorMessage);
 
-DeployResult deploy(const Options &options,
-                    const QMap<QString, QString> &qmakeVariables,
-                    QString *errorMessage);
-
-
-bool deployWebProcess(const QMap<QString, QString> &qmakeVariables,
-                      const char *binaryName,
-                      const Options &sourceOptions, QString *errorMessage);
-
-bool deployWebEngine(const QMap<QString, QString> &qmakeVariables,
-                     const Options &options, QString *errorMessage);
+private:
+    Options m_options;
+    QMap<QString, QString> m_qmakeVariables;
+};
 
 QT_END_NAMESPACE
 

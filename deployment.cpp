@@ -39,15 +39,52 @@
 
 QT_BEGIN_NAMESPACE
 
-QT_END_NAMESPACE
+// Base class to filter files by name filters functions to be passed to updateFile().
+class NameFilterFileEntryFunction {
+public:
+    explicit NameFilterFileEntryFunction(const QStringList &nameFilters);
+    QStringList operator()(const QDir &dir) const;
 
-bool updateFile(const QString &sourceFileName, const QString &targetDirectory, unsigned flags, JsonOutput *json, QString *errorMessage)
-{
-    return updateFile(sourceFileName, NameFilterFileEntryFunction(QStringList()), targetDirectory, flags, json, errorMessage);
-}
+private:
+    const QStringList m_nameFilters;
+};
+
+// Convenience for all files.
+
+// Base class to filter debug/release Windows DLLs for functions to be passed to updateFile().
+// Tries to pre-filter by namefilter and does check via PE.
+class DllDirectoryFileEntryFunction {
+public:
+    explicit DllDirectoryFileEntryFunction(Platform platform, DebugMatchMode debugMatchMode, const QString &prefix = QString());
+
+    QStringList operator()(const QDir &dir) const;
+
+private:
+    const Platform m_platform;
+    const DebugMatchMode m_debugMatchMode;
+    const QString m_prefix;
+};
+
+// File entry filter function for updateFile() that returns a list of files for
+// QML import trees: DLLs (matching debgug) and .qml/,js, etc.
+class QmlDirectoryFileEntryFunction {
+public:
+    explicit QmlDirectoryFileEntryFunction(Platform platform, DebugMatchMode debugMatchMode, bool skipQmlSources = false);
+
+    QStringList operator()(const QDir &dir) const;
+
+private:
+    static inline QStringList qmlNameFilters(bool skipQmlSources);
+
+    NameFilterFileEntryFunction m_qmlNameFilter;
+    DllDirectoryFileEntryFunction m_dllFilter;
+};
+
+//-----------------------------------------------------------------------------
 
 DllDirectoryFileEntryFunction::DllDirectoryFileEntryFunction(Platform platform, DebugMatchMode debugMatchMode, const QString &prefix) :
-    m_platform(platform), m_debugMatchMode(debugMatchMode), m_prefix(prefix) {}
+    m_platform(platform), m_debugMatchMode(debugMatchMode), m_prefix(prefix)
+{}
 
 QStringList DllDirectoryFileEntryFunction::operator()(const QDir &dir) const
 {
@@ -59,7 +96,10 @@ QmlDirectoryFileEntryFunction::QmlDirectoryFileEntryFunction(Platform platform, 
     , m_dllFilter(platform, debugMatchMode)
 {}
 
-QStringList QmlDirectoryFileEntryFunction::operator()(const QDir &dir) const { return m_dllFilter(dir) + m_qmlNameFilter(dir);  }
+QStringList QmlDirectoryFileEntryFunction::operator()(const QDir &dir) const
+{
+    return m_dllFilter(dir) + m_qmlNameFilter(dir);
+}
 
 QStringList QmlDirectoryFileEntryFunction::qmlNameFilters(bool skipQmlSources)
 {
@@ -70,11 +110,27 @@ QStringList QmlDirectoryFileEntryFunction::qmlNameFilters(bool skipQmlSources)
     return result;
 }
 
-NameFilterFileEntryFunction::NameFilterFileEntryFunction(const QStringList &nameFilters) : m_nameFilters(nameFilters) {}
+NameFilterFileEntryFunction::NameFilterFileEntryFunction(const QStringList &nameFilters) :
+    m_nameFilters(nameFilters)
+{}
 
-QStringList NameFilterFileEntryFunction::operator()(const QDir &dir) const { return dir.entryList(m_nameFilters, QDir::Files); }
+QStringList NameFilterFileEntryFunction::operator()(const QDir &dir) const
+{
+    return dir.entryList(m_nameFilters, QDir::Files);
+}
 
-QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules, const QString &qtPluginsDirName, const QString &libraryLocation, DebugMatchMode debugMatchModeIn, Platform platform, QString *platformPlugin)
+//-----------------------------------------------------------------------------
+
+static bool updateFile(const QString &sourceFileName, const QString &targetDirectory,
+                       unsigned flags, JsonOutput *json, QString *errorMessage)
+{
+    return updateFile(sourceFileName, NameFilterFileEntryFunction(QStringList()),
+                      targetDirectory, flags, json, errorMessage);
+}
+
+static QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules,
+                                 const QString &qtPluginsDirName, const QString &libraryLocation,
+                                 DebugMatchMode debugMatchModeIn, Platform platform, QString *platformPlugin)
 {
     QString errorMessage;
     if (qtPluginsDirName.isEmpty())
@@ -149,7 +205,9 @@ QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules, con
     return result;
 }
 
-bool deployTranslations(const QString &sourcePath, quint64 usedQtModules, const QString &target, unsigned flags, QString *errorMessage)
+//-----------------------------------------------------------------------------
+
+bool Deployment::deployTranslations(const QString &sourcePath, quint64 usedQtModules, const QString &target, unsigned flags, QString *errorMessage)
 {
     // Find available languages prefixes by checking on qtbase.
     QStringList prefixes;
@@ -187,7 +245,7 @@ bool deployTranslations(const QString &sourcePath, quint64 usedQtModules, const 
     return true;
 }
 
-QStringList compilerRunTimeLibs(Platform platform, bool isDebug, unsigned wordSize)
+QStringList Deployment::compilerRunTimeLibs(Platform platform, bool isDebug, unsigned wordSize)
 {
     QStringList result;
     switch (platform) {
@@ -260,15 +318,19 @@ QStringList compilerRunTimeLibs(Platform platform, bool isDebug, unsigned wordSi
     return result;
 }
 
-DeployResult deploy(const Options &options, const QMap<QString, QString> &qmakeVariables, QString *errorMessage)
+Deployment::Deployment(const Options &options, const QMap<QString, QString> &qmakeVariables) :
+    m_options(options), m_qmakeVariables(qmakeVariables)
+{}
+
+DeployResult Deployment::deploy(const Options &options, QString *errorMessage)
 {
     DeployResult result;
 
     const QChar slash = QLatin1Char('/');
 
-    const QString qtBinDir = qmakeVariables.value(QStringLiteral("QT_INSTALL_BINS"));
-    const QString libraryLocation = options.platform == Unix ? qmakeVariables.value(QStringLiteral("QT_INSTALL_LIBS")) : qtBinDir;
-    const int version = qtVersion(qmakeVariables);
+    const QString qtBinDir = m_qmakeVariables.value(QStringLiteral("QT_INSTALL_BINS"));
+    const QString libraryLocation = options.platform == Unix ? m_qmakeVariables.value(QStringLiteral("QT_INSTALL_LIBS")) : qtBinDir;
+    const int version = qtVersion(m_qmakeVariables);
     Q_UNUSED(version)
 
     if (optVerboseLevel > 1)
@@ -365,7 +427,7 @@ DeployResult deploy(const Options &options, const QMap<QString, QString> &qmakeV
         foreach (const QString &qmlDirectory, qmlDirectories) {
             if (optVerboseLevel >= 1)
                 std::wcout << "Scanning " << QDir::toNativeSeparators(qmlDirectory) << ":\n";
-            const QmlImportScanResult scanResult = runQmlImportScanner(qmlDirectory, qmakeVariables.value(QStringLiteral("QT_INSTALL_QML")), options.platform,
+            const QmlImportScanResult scanResult = runQmlImportScanner(qmlDirectory, m_qmakeVariables.value(QStringLiteral("QT_INSTALL_QML")), options.platform,
                                                                        debugMatchMode, errorMessage);
             if (!scanResult.ok)
                 return result;
@@ -407,7 +469,7 @@ DeployResult deploy(const Options &options, const QMap<QString, QString> &qmakeV
             findQtPlugins(&result.deployedQtLibraries,
                           // For non-QML applications, disable QML to prevent it from being pulled in by the qtaccessiblequick plugin.
                           options.disabledLibraries | (usesQml2 ? 0 : (QtQmlModule | QtQuickModule)),
-                          qmakeVariables.value(QStringLiteral("QT_INSTALL_PLUGINS")), libraryLocation,
+                          m_qmakeVariables.value(QStringLiteral("QT_INSTALL_PLUGINS")), libraryLocation,
                           debugMatchMode, options.platform, &platformPlugin);
 
     // Apply options flags and re-add library names.
@@ -539,7 +601,7 @@ DeployResult deploy(const Options &options, const QMap<QString, QString> &qmakeV
             }
         } // Quick 2
         if (usesQuick1) {
-            const QString quick1ImportPath = qmakeVariables.value(QStringLiteral("QT_INSTALL_IMPORTS"));
+            const QString quick1ImportPath = m_qmakeVariables.value(QStringLiteral("QT_INSTALL_IMPORTS"));
             QStringList quick1Imports(QStringLiteral("Qt"));
             if (result.deployedQtLibraries & QtWebKitModule)
                 quick1Imports << QStringLiteral("QtWebKit");
@@ -553,7 +615,7 @@ DeployResult deploy(const Options &options, const QMap<QString, QString> &qmakeV
 
     if (options.translations) {
         if (!createDirectory(options.translationsDirectory, errorMessage)
-                || !deployTranslations(qmakeVariables.value(QStringLiteral("QT_INSTALL_TRANSLATIONS")),
+                || !deployTranslations(m_qmakeVariables.value(QStringLiteral("QT_INSTALL_TRANSLATIONS")),
                                        result.deployedQtLibraries, options.translationsDirectory,
                                        options.updateFileFlags, errorMessage)) {
             return result;
@@ -564,23 +626,23 @@ DeployResult deploy(const Options &options, const QMap<QString, QString> &qmakeV
     return result;
 }
 
-bool deployWebProcess(const QMap<QString, QString> &qmakeVariables, const char *binaryName, const Options &sourceOptions, QString *errorMessage)
+bool Deployment::deployWebProcess(const char *binaryName, QString *errorMessage)
 {
     // Copy the web process and its dependencies
-    const QString webProcess = webProcessBinary(binaryName, sourceOptions.platform);
-    const QString webProcessSource = qmakeVariables.value(QStringLiteral("QT_INSTALL_LIBEXECS")) +
+    const QString webProcess = webProcessBinary(binaryName, m_options.platform);
+    const QString webProcessSource = m_qmakeVariables.value(QStringLiteral("QT_INSTALL_LIBEXECS")) +
             QLatin1Char('/') + webProcess;
-    if (!updateFile(webProcessSource, sourceOptions.directory, sourceOptions.updateFileFlags, sourceOptions.json, errorMessage))
+    if (!updateFile(webProcessSource, m_options.directory, m_options.updateFileFlags, m_options.json, errorMessage))
         return false;
-    Options options(sourceOptions);
+
+    Options options(m_options);
     options.binaries.append(options.directory + QLatin1Char('/') + webProcess);
     options.quickImports = false;
     options.translations = false;
-    return deploy(options, qmakeVariables, errorMessage);
+    return deploy(options, errorMessage);
 }
 
-
-bool deployWebEngine(const QMap<QString, QString> &qmakeVariables, const Options &options, QString *errorMessage)
+bool Deployment::deployWebEngine(QString *errorMessage)
 {
     static const char *installDataFiles[] = {"icudtl.dat",
                                              "qtwebengine_resources.pak",
@@ -588,20 +650,19 @@ bool deployWebEngine(const QMap<QString, QString> &qmakeVariables, const Options
                                              "qtwebengine_resources_200p.pak"};
 
     std::wcout << "Deploying: " << Options::webEngineProcessC << "...\n";
-    if (!deployWebProcess(qmakeVariables, Options::webEngineProcessC, options, errorMessage)) {
+    if (!deployWebProcess(Options::webEngineProcessC, errorMessage)) {
         std::wcerr << errorMessage << '\n';
         return false;
     }
-    const QString installData
-            = qmakeVariables.value(QStringLiteral("QT_INSTALL_DATA")) + QLatin1Char('/');
+    const QString installData = m_qmakeVariables.value(QStringLiteral("QT_INSTALL_DATA")) + QLatin1Char('/');
     for (size_t i = 0; i < sizeof(installDataFiles)/sizeof(installDataFiles[0]); ++i) {
         if (!updateFile(installData + QLatin1String(installDataFiles[i]),
-                        options.directory, options.updateFileFlags, options.json, errorMessage)) {
+                        m_options.directory, m_options.updateFileFlags, m_options.json, errorMessage)) {
             std::wcerr << errorMessage << '\n';
             return false;
         }
     }
-    const QFileInfo translations(qmakeVariables.value(QStringLiteral("QT_INSTALL_TRANSLATIONS"))
+    const QFileInfo translations(m_qmakeVariables.value(QStringLiteral("QT_INSTALL_TRANSLATIONS"))
                                  + QStringLiteral("/qtwebengine_locales"));
     if (!translations.isDir()) {
         std::wcerr << "Warning: Cannot find the translation files of the QtWebEngine module at "
@@ -609,7 +670,9 @@ bool deployWebEngine(const QMap<QString, QString> &qmakeVariables, const Options
         return true;
     }
     // Missing translations may cause crashes, ignore --no-translations.
-    return createDirectory(options.translationsDirectory, errorMessage)
-            && updateFile(translations.absoluteFilePath(), options.translationsDirectory,
-                          options.updateFileFlags, options.json, errorMessage);
+    return createDirectory(m_options.translationsDirectory, errorMessage)
+            && updateFile(translations.absoluteFilePath(), m_options.translationsDirectory,
+                          m_options.updateFileFlags, m_options.json, errorMessage);
 }
+
+QT_END_NAMESPACE
