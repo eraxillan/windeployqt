@@ -97,4 +97,91 @@ size_t qtModuleEntryCount()
     return qtModulesCount;
 }
 
+
+QByteArray formatQtModules(quint64 mask, bool option)
+{
+    QByteArray result;
+    for (size_t i = 0; i < qtModuleEntryCount(); ++i) {
+        if (mask & qtModuleEntryByIndex(i).module) {
+            if (!result.isEmpty())
+                result.append(' ');
+            result.append(option ? qtModuleEntryByIndex(i).option : qtModuleEntryByIndex(i).libraryName);
+        }
+    }
+    return result;
+}
+
+bool isQtModule(const QString &libName)
+{
+    // Match Standard modules, Qt5XX.dll, Qt[Commercial]Charts.dll and special cases.
+    return libName.size() > 2
+            && ((libName.startsWith(QLatin1String("Qt"), Qt::CaseInsensitive) && libName.at(2).isDigit())
+                || libName.startsWith(QLatin1String("QtCommercial"), Qt::CaseInsensitive)
+                || libName.startsWith(QLatin1String("QtCharts"), Qt::CaseInsensitive)
+                || libName.startsWith(QLatin1String("DataVisualization"), Qt::CaseInsensitive)
+                || libName.startsWith(QLatin1String("Enginio"), Qt::CaseInsensitive));
+}
+
+quint64 qtModuleForPlugin(const QString &subDirName)
+{
+    if (subDirName == QLatin1String("accessible") || subDirName == QLatin1String("iconengines")
+            || subDirName == QLatin1String("imageformats") || subDirName == QLatin1String("platforms")
+            || subDirName == QLatin1String("platforminputcontexts")) {
+        return QtGuiModule;
+    }
+    if (subDirName == QLatin1String("bearer"))
+        return QtNetworkModule;
+    if (subDirName == QLatin1String("sqldrivers"))
+        return QtSqlModule;
+    if (subDirName == QLatin1String("audio") || subDirName == QLatin1String("mediaservice") || subDirName == QLatin1String("playlistformats"))
+        return QtMultimediaModule;
+    if (subDirName == QLatin1String("printsupport"))
+        return QtPrintSupportModule;
+    if (subDirName == QLatin1String("scenegraph"))
+        return QtQuickModule;
+    if (subDirName == QLatin1String("qmltooling"))
+        return QtQuickModule | QtQmlToolingModule;
+    if (subDirName == QLatin1String("qml1tooling"))
+        return QtDeclarativeModule;
+    if (subDirName == QLatin1String("position"))
+        return QtPositioningModule;
+    if (subDirName == QLatin1String("geoservices"))
+        return QtLocationModule;
+    if (subDirName == QLatin1String("sensors") || subDirName == QLatin1String("sensorgestures"))
+        return QtSensorsModule;
+    if (subDirName == QLatin1String("qtwebengine"))
+        return QtWebEngineModule | QtWebEngineCoreModule | QtWebEngineWidgetsModule;
+    if (subDirName == QLatin1String("sceneparsers"))
+        return Qt3DRendererModule;
+    return 0; // "designer"
+}
+
+quint64 qtModule(const QString &module)
+{
+    quint64 bestMatch = 0;
+    int bestMatchLength = 0;
+    for (size_t i = 0; i < qtModuleEntryCount(); ++i) {
+        const QString libraryName = QLatin1String(qtModuleEntryByIndex(i).libraryName);
+        if (libraryName.size() > bestMatchLength && module.contains(libraryName, Qt::CaseInsensitive)) {
+            bestMatch = qtModuleEntryByIndex(i).module;
+            bestMatchLength = libraryName.size();
+        }
+    }
+    return bestMatch;
+}
+
+QStringList translationNameFilters(quint64 modules, const QString &prefix)
+{
+    QStringList result;
+    for (size_t i = 0; i < qtModuleEntryCount(); ++i) {
+        if ((qtModuleEntryByIndex(i).module & modules) && qtModuleEntryByIndex(i).translation) {
+            const QString name = QLatin1String(qtModuleEntryByIndex(i).translation) +
+                    QLatin1Char('_') +  prefix + QStringLiteral(".qm");
+            if (!result.contains(name))
+                result.push_back(name);
+        }
+    }
+    return result;
+}
+
 QT_END_NAMESPACE
