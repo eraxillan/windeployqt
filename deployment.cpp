@@ -121,6 +121,39 @@ QStringList NameFilterFileEntryFunction::operator()(const QDir &dir) const
 
 //-----------------------------------------------------------------------------
 
+static inline QString webProcessBinary(const char *binaryName, Platform p)
+{
+    const QString webProcess = QLatin1String(binaryName);
+    return (p & WindowsBased) ? webProcess + QStringLiteral(".exe") : webProcess;
+}
+
+// Determine the Qt lib infix from the library path of "Qt5Core<qtblibinfix>[d].dll".
+static QString qtlibInfixFromCoreLibName(const QString &path, bool isDebug, Platform platform)
+{
+    const int startPos = path.lastIndexOf(QLatin1Char('/')) + 8;
+    int endPos = path.lastIndexOf(QLatin1Char('.'));
+    if (isDebug && (platform & WindowsBased))
+        endPos--;
+    return endPos > startPos ? path.mid(startPos, endPos - startPos) : QString();
+}
+
+static QString libraryPath(const QString &libraryLocation, const char *name, const QString &qtLibInfix, Platform platform, bool debug)
+{
+    QString result = libraryLocation + QLatin1Char('/');
+    if (platform & WindowsBased) {
+        result += QLatin1String(name);
+        result += qtLibInfix;
+        if (debug)
+            result += QLatin1Char('d');
+    } else if (platform & UnixBased) {
+        result += QStringLiteral("lib");
+        result += QLatin1String(name);
+        result += qtLibInfix;
+    }
+    result += sharedLibrarySuffix(platform);
+    return result;
+}
+
 static bool updateFile(const QString &sourceFileName, const QStringList &nameFilters,
                 const QString &targetDirectory, unsigned flags, JsonOutput *json, QString *errorMessage)
 {
@@ -344,6 +377,48 @@ static bool updateFile(const QString &sourceFileName, const QString &targetDirec
                       targetDirectory, flags, json, errorMessage);
 }
 
+// Return dependent modules of executable files.
+static QStringList findDependentLibraries(const QString &executableFileName, Platform platform, QString *errorMessage)
+{
+    QStringList result;
+    readExecutable(executableFileName, platform, errorMessage, &result);
+    return result;
+}
+
+// Helper for recursively finding all dependent Qt libraries.
+static bool findDependentQtLibraries(const QString &qtBinDir, const QString &binary, Platform platform,
+                                     QString *errorMessage, QStringList *result,
+                                     unsigned *wordSize = 0, bool *isDebug = 0,
+                                     int *directDependencyCount = 0, int recursionDepth = 0)
+{
+    QStringList dependentLibs;
+    if (directDependencyCount)
+        *directDependencyCount = 0;
+    if (!readExecutable(binary, platform, errorMessage, &dependentLibs, wordSize, isDebug)) {
+        errorMessage->prepend(QLatin1String("Unable to find dependent libraries of ") +
+                              QDir::toNativeSeparators(binary) + QLatin1String(" :"));
+        return false;
+    }
+    // Filter out the Qt libraries. Note that depends.exe finds libs from optDirectory if we
+    // are run the 2nd time (updating). We want to check against the Qt bin dir libraries
+    const int start = result->size();
+    foreach (const QString &lib, dependentLibs) {
+        if (isQtModule(lib)) {
+            const QString path = normalizeFileName(qtBinDir + QLatin1Char('/') + QFileInfo(lib).fileName());
+            if (!result->contains(path))
+                result->append(path);
+        }
+    }
+    const int end = result->size();
+    if (directDependencyCount)
+        *directDependencyCount = end - start;
+    // Recurse
+    for (int i = start; i < end; ++i)
+        if (!findDependentQtLibraries(qtBinDir, result->at(i), platform, errorMessage, result, 0, 0, 0, recursionDepth + 1))
+            return false;
+    return true;
+}
+
 static QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules,
                                  const QString &qtPluginsDirName, const QString &libraryLocation,
                                  DebugMatchMode debugMatchModeIn, Platform platform, QString *platformPlugin)
@@ -419,6 +494,55 @@ static QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModul
         } // type matches
     } // for plugin folder
     return result;
+}
+
+// Search for "qt_prfxpath=xxxx" in \a path, and replace it with "qt_prfxpath=."
+static bool patchQtCore(const QString &path, QString *errorMessage)
+{
+    if (optVerboseLevel)
+        std::wcout << "Patching " << QFileInfo(path).fileName() << "...\n";
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadWrite)) {
+        *errorMessage = QString::fromLatin1("Unable to patch %1: %2").arg(
+                    QDir::toNativeSeparators(path), file.errorString());
+        return false;
+    }
+    QByteArray content = file.readAll();
+
+    if (content.isEmpty()) {
+        *errorMessage = QString::fromLatin1("Unable to patch %1: Could not read file content").arg(
+                    QDir::toNativeSeparators(path));
+        return false;
+    }
+
+    QByteArray prfxpath("qt_prfxpath=");
+    int startPos = content.indexOf(prfxpath);
+    if (startPos == -1) {
+        *errorMessage = QString::fromLatin1(
+                    "Unable to patch %1: Could not locate pattern \"qt_prfxpath=\"").arg(
+                    QDir::toNativeSeparators(path));
+        return false;
+    }
+    startPos += prfxpath.length();
+    int endPos = content.indexOf(char(0), startPos);
+    if (endPos == -1) {
+        *errorMessage = QString::fromLatin1("Unable to patch %1: Internal error").arg(
+                    QDir::toNativeSeparators(path));
+        return false;
+    }
+
+    QByteArray replacement = QByteArray(endPos - startPos, char(0));
+    replacement[0] = '.';
+    content.replace(startPos, endPos - startPos, replacement);
+
+    if (!file.seek(0)
+            || (file.write(content) != content.size())) {
+        *errorMessage = QString::fromLatin1("Unable to patch %1: Could not write to file").arg(
+                    QDir::toNativeSeparators(path));
+        return false;
+    }
+    return true;
 }
 
 //-----------------------------------------------------------------------------

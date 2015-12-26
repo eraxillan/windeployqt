@@ -79,6 +79,11 @@ QString QmlImportScanResult::Module::installPath(const QString &root) const
     return result;
 }
 
+static bool isBuildDirectory(Platform platform, const QString &dirName)
+{
+    return (platform & WindowsBased) && (dirName == QLatin1String("debug") || dirName == QLatin1String("release"));
+}
+
 static QString qmlDirectoryRecursion(Platform platform, const QString &path)
 {
     QDir dir(path);

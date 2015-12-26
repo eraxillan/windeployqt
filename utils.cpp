@@ -64,11 +64,6 @@ QT_BEGIN_NAMESPACE
 
 int optVerboseLevel = 1;
 
-bool isBuildDirectory(Platform platform, const QString &dirName)
-{
-    return (platform & WindowsBased) && (dirName == QLatin1String("debug") || dirName == QLatin1String("release"));
-}
-
 // Create a symbolic link by changing to the source directory to make sure the
 // link uses relative paths only (QFile::link() otherwise uses the absolute path).
 bool createSymbolicLink(const QFileInfo &source, const QString &target, QString *errorMessage)
@@ -488,7 +483,7 @@ QMap<QString, QString> queryQMakeAll(QString *errorMessage)
     return result;
 }
 
-QString queryQMake(const QString &variable, QString *errorMessage)
+/*QString queryQMake(const QString &variable, QString *errorMessage)
 {
     QByteArray stdOut;
     QByteArray stdErr;
@@ -504,7 +499,7 @@ QString queryQMake(const QString &variable, QString *errorMessage)
         return QString();
     }
     return QString::fromLocal8Bit(stdOut).trimmed();
-}
+}*/
 
 bool readElfExecutable(const QString &elfExecutableFileName, QString *errorMessage,
                        QStringList *dependentLibraries, unsigned *wordSize,
@@ -844,83 +839,45 @@ QString findD3dCompiler(Platform, const QString &, unsigned)
 
 #endif // !Q_OS_WIN
 
-// Search for "qt_prfxpath=xxxx" in \a path, and replace it with "qt_prfxpath=."
-bool patchQtCore(const QString &path, QString *errorMessage)
+Platform platformFromMkSpec(const QString &xSpec)
 {
-    if (optVerboseLevel)
-        std::wcout << "Patching " << QFileInfo(path).fileName() << "...\n";
-
-    QFile file(path);
-    if (!file.open(QIODevice::ReadWrite)) {
-        *errorMessage = QString::fromLatin1("Unable to patch %1: %2").arg(
-                    QDir::toNativeSeparators(path), file.errorString());
-        return false;
+    if (xSpec == QLatin1String("linux-g++"))
+        return Unix;
+    if (xSpec.startsWith(QLatin1String("win32-")))
+        return xSpec.contains(QLatin1String("g++")) ? WindowsMinGW : Windows;
+    if (xSpec.startsWith(QLatin1String("winrt-x")))
+        return WinRtIntel;
+    if (xSpec.startsWith(QLatin1String("winrt-arm")))
+        return WinRtArm;
+    if (xSpec.startsWith(QLatin1String("winphone-x")))
+        return WinPhoneIntel;
+    if (xSpec.startsWith(QLatin1String("winphone-arm")))
+        return WinPhoneArm;
+    if (xSpec.startsWith(QLatin1String("wince"))) {
+        if (xSpec.contains(QLatin1String("-x86-")))
+            return WinCEIntel;
+        if (xSpec.contains(QLatin1String("-arm")))
+            return WinCEArm;
     }
-    QByteArray content = file.readAll();
-
-    if (content.isEmpty()) {
-        *errorMessage = QString::fromLatin1("Unable to patch %1: Could not read file content").arg(
-                    QDir::toNativeSeparators(path));
-        return false;
-    }
-
-    QByteArray prfxpath("qt_prfxpath=");
-    int startPos = content.indexOf(prfxpath);
-    if (startPos == -1) {
-        *errorMessage = QString::fromLatin1(
-                    "Unable to patch %1: Could not locate pattern \"qt_prfxpath=\"").arg(
-                    QDir::toNativeSeparators(path));
-        return false;
-    }
-    startPos += prfxpath.length();
-    int endPos = content.indexOf(char(0), startPos);
-    if (endPos == -1) {
-        *errorMessage = QString::fromLatin1("Unable to patch %1: Internal error").arg(
-                    QDir::toNativeSeparators(path));
-        return false;
-    }
-
-    QByteArray replacement = QByteArray(endPos - startPos, char(0));
-    replacement[0] = '.';
-    content.replace(startPos, endPos - startPos, replacement);
-
-    if (!file.seek(0)
-            || (file.write(content) != content.size())) {
-        *errorMessage = QString::fromLatin1("Unable to patch %1: Could not write to file").arg(
-                    QDir::toNativeSeparators(path));
-        return false;
-    }
-    return true;
+    return UnknownPlatform;
 }
 
-bool findDependentQtLibraries(const QString &qtBinDir, const QString &binary, Platform platform, QString *errorMessage, QStringList *result, unsigned *wordSize, bool *isDebug, int *directDependencyCount, int recursionDepth)
+int qtVersion(const QMap<QString, QString> &qmakeVariables)
 {
-    QStringList dependentLibs;
-    if (directDependencyCount)
-        *directDependencyCount = 0;
-    if (!readExecutable(binary, platform, errorMessage, &dependentLibs, wordSize, isDebug)) {
-        errorMessage->prepend(QLatin1String("Unable to find dependent libraries of ") +
-                              QDir::toNativeSeparators(binary) + QLatin1String(" :"));
-        return false;
-    }
-    // Filter out the Qt libraries. Note that depends.exe finds libs from optDirectory if we
-    // are run the 2nd time (updating). We want to check against the Qt bin dir libraries
-    const int start = result->size();
-    foreach (const QString &lib, dependentLibs) {
-        if (isQtModule(lib)) {
-            const QString path = normalizeFileName(qtBinDir + QLatin1Char('/') + QFileInfo(lib).fileName());
-            if (!result->contains(path))
-                result->append(path);
-        }
-    }
-    const int end = result->size();
-    if (directDependencyCount)
-        *directDependencyCount = end - start;
-    // Recurse
-    for (int i = start; i < end; ++i)
-        if (!findDependentQtLibraries(qtBinDir, result->at(i), platform, errorMessage, result, 0, 0, 0, recursionDepth + 1))
-            return false;
-    return true;
+    const QString versionString = qmakeVariables.value(QStringLiteral("QT_VERSION"));
+    const QChar dot = QLatin1Char('.');
+    const int majorVersion = versionString.section(dot, 0, 0).toInt();
+    const int minorVersion = versionString.section(dot, 1, 1).toInt();
+    const int patchVersion = versionString.section(dot, 2, 2).toInt();
+    return (majorVersion << 16) | (minorVersion << 8) | patchVersion;
+}
+
+bool readExecutable(const QString &executableFileName, Platform platform, QString *errorMessage, QStringList *dependentLibraries, unsigned *wordSize, bool *isDebug)
+{
+    return platform == Unix ?
+                readElfExecutable(executableFileName, errorMessage, dependentLibraries, wordSize, isDebug) :
+                readPeExecutable(executableFileName, errorMessage, dependentLibraries, wordSize, isDebug,
+                                 (platform == WindowsMinGW));
 }
 
 QT_END_NAMESPACE

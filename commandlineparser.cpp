@@ -38,6 +38,43 @@
 
 QT_BEGIN_NAMESPACE
 
+static inline QString msgFileDoesNotExist(const QString & file)
+{
+    return QLatin1Char('"') + QDir::toNativeSeparators(file)
+        + QStringLiteral("\" does not exist.");
+}
+
+// Simple line wrapping at 80 character boundaries.
+static inline QString lineBreak(QString s)
+{
+    for (int i = 80; i < s.size(); i += 80) {
+        const int lastBlank = s.lastIndexOf(QLatin1Char(' '), i);
+        if (lastBlank >= 0) {
+            s[lastBlank] = QLatin1Char('\n');
+            i = lastBlank + 1;
+        }
+    }
+    return s;
+}
+
+// Return binary from folder
+static QString findBinary(const QString &directory, Platform platform)
+{
+    QDir dir(QDir::cleanPath(directory));
+
+    const QStringList nameFilters = (platform & WindowsBased) ?
+                QStringList(QStringLiteral("*.exe")) : QStringList();
+    foreach (const QString &binary, dir.entryList(nameFilters, QDir::Files | QDir::Executable)) {
+        if (!binary.contains(QLatin1String(Options::webKitProcessC), Qt::CaseInsensitive)
+                && !binary.contains(QLatin1String(Options::webEngineProcessC), Qt::CaseInsensitive)) {
+            return dir.filePath(binary);
+        }
+    }
+    return QString();
+}
+
+//-----------------------------------------------------------------------------
+
 CommandLineParser::CommandLineParser(): m_optWebKit2(OptionAuto)
 {
 }
