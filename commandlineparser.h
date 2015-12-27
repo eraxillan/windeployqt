@@ -56,20 +56,19 @@ public:
     };
 
 public:
-    static QString helpText(const QCommandLineParser &p);
+    QString helpText();
 
-    static ExlusiveOptionValue parseExclusiveOptions(const QCommandLineParser *parser,
-                                                     const QCommandLineOption &enableOption,
-                                                     const QCommandLineOption &disableOption);
+    ExlusiveOptionValue parseExclusiveOptions(const QCommandLineOption &enableOption,
+                                              const QCommandLineOption &disableOption);
 public:
     CommandLineParser();
 
-    int parseArguments(const QStringList &arguments, QCommandLineParser *parser,
-                       Options *options, QString *errorMessage);
+    int parseArguments(const QStringList &arguments, Options *options, QString *errorMessage);
 
     ExlusiveOptionValue optWebKit2() const { return m_optWebKit2; }
 
 private:
+    QCommandLineParser m_parser;
     ExlusiveOptionValue m_optWebKit2;
 };
 

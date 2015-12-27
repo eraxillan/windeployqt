@@ -62,13 +62,11 @@ int main(int argc, char **argv)
         options.compilerRunTime = true;
 
     {   // Command line
-        QCommandLineParser parser;
-        QString errorMessage;
-        const int result = clParser.parseArguments(QCoreApplication::arguments(), &parser, &options, &errorMessage);
+        const int result = clParser.parseArguments(QCoreApplication::arguments(), &options, &errorMessage);
         if (result & CommandLineParser::CommandLineParseError)
             std::wcerr << errorMessage << "\n\n";
         if (result & CommandLineParser::CommandLineParseHelpRequested)
-            std::fputs(qPrintable(CommandLineParser::helpText(parser)), stdout);
+            std::fputs(qPrintable(clParser.helpText()), stdout);
         if (result & CommandLineParser::CommandLineParseError)
             return 1;
         if (result & CommandLineParser::CommandLineParseHelpRequested)

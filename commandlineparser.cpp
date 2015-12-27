@@ -75,13 +75,19 @@ static QString findBinary(const QString &directory, Platform platform)
 
 //-----------------------------------------------------------------------------
 
-CommandLineParser::CommandLineParser(): m_optWebKit2(OptionAuto)
+CommandLineParser::CommandLineParser(): m_parser(), m_optWebKit2(OptionAuto)
 {
+    m_parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
+    m_parser.setApplicationDescription(QStringLiteral("Qt Deploy Tool ") + QLatin1String(QT_VERSION_STR)
+                                      + QLatin1String("\n\nThe simplest way to use windeployqt is to add the bin directory of your Qt\n"
+                                                      "installation (e.g. <QT_DIR\\bin>) to the PATH variable and then run:\n  windeployqt <path-to-app-binary>\n"
+                                                      "If ICU, ANGLE, etc. are not in the bin directory, they need to be in the PATH\nvariable. "
+                                                      "If your application uses Qt Quick, run:\n  windeployqt --qmldir <path-to-app-qml-files> <path-to-app-binary>"));
 }
 
-QString CommandLineParser::helpText(const QCommandLineParser &p)
+QString CommandLineParser::helpText()
 {
-    QString result = p.helpText();
+    QString result = m_parser.helpText();
     // Replace the default-generated text which is too long by a short summary
     // explaining how to enable single libraries.
     const int moduleStart = result.indexOf(QLatin1String("\n  --bluetooth"));
@@ -97,11 +103,11 @@ QString CommandLineParser::helpText(const QCommandLineParser &p)
     return result;
 }
 
-CommandLineParser::ExlusiveOptionValue CommandLineParser::parseExclusiveOptions(const QCommandLineParser *parser, const QCommandLineOption &enableOption,
+CommandLineParser::ExlusiveOptionValue CommandLineParser::parseExclusiveOptions(const QCommandLineOption &enableOption,
                                                                                 const QCommandLineOption &disableOption)
 {
-    const bool enabled = parser->isSet(enableOption);
-    const bool disabled = parser->isSet(disableOption);
+    const bool enabled = m_parser.isSet(enableOption);
+    const bool disabled = m_parser.isSet(disableOption);
     if (enabled) {
         if (disabled) {
             std::wcerr << "Warning: both -" << enableOption.names().first()
@@ -113,102 +119,96 @@ CommandLineParser::ExlusiveOptionValue CommandLineParser::parseExclusiveOptions(
     return disabled ? OptionDisabled : OptionAuto;
 }
 
-int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLineParser *parser, Options *options, QString *errorMessage)
+int CommandLineParser::parseArguments(const QStringList &arguments, Options *options, QString *errorMessage)
 {
     typedef QSharedPointer<QCommandLineOption> CommandLineOptionPtr;
     typedef QPair<CommandLineOptionPtr, quint64> OptionMaskPair;
     typedef QVector<OptionMaskPair> OptionMaskVector;
 
-    parser->setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
-    parser->setApplicationDescription(QStringLiteral("Qt Deploy Tool ") + QLatin1String(QT_VERSION_STR)
-                                      + QLatin1String("\n\nThe simplest way to use windeployqt is to add the bin directory of your Qt\n"
-                                                      "installation (e.g. <QT_DIR\\bin>) to the PATH variable and then run:\n  windeployqt <path-to-app-binary>\n"
-                                                      "If ICU, ANGLE, etc. are not in the bin directory, they need to be in the PATH\nvariable. "
-                                                      "If your application uses Qt Quick, run:\n  windeployqt --qmldir <path-to-app-qml-files> <path-to-app-binary>"));
-    const QCommandLineOption helpOption = parser->addHelpOption();
-    parser->addVersionOption();
+    const QCommandLineOption helpOption = m_parser.addHelpOption();
+    m_parser.addVersionOption();
 
     QCommandLineOption dirOption(QStringLiteral("dir"),
                                  QStringLiteral("Use directory instead of binary directory."),
                                  QStringLiteral("directory"));
-    parser->addOption(dirOption);
+    m_parser.addOption(dirOption);
 
     QCommandLineOption libDirOption(QStringLiteral("libdir"),
                                     QStringLiteral("Copy libraries to path."),
                                     QStringLiteral("path"));
-    parser->addOption(libDirOption);
+    m_parser.addOption(libDirOption);
 
     QCommandLineOption debugOption(QStringLiteral("debug"),
                                    QStringLiteral("Assume debug binaries."));
-    parser->addOption(debugOption);
+    m_parser.addOption(debugOption);
     QCommandLineOption releaseOption(QStringLiteral("release"),
                                      QStringLiteral("Assume release binaries."));
-    parser->addOption(releaseOption);
+    m_parser.addOption(releaseOption);
     QCommandLineOption releaseWithDebugInfoOption(QStringLiteral("release-with-debug-info"),
                                                   QStringLiteral("Assume release binaries with debug information."));
-    parser->addOption(releaseWithDebugInfoOption);
+    m_parser.addOption(releaseWithDebugInfoOption);
 
     QCommandLineOption forceOption(QStringLiteral("force"),
                                    QStringLiteral("Force updating files."));
-    parser->addOption(forceOption);
+    m_parser.addOption(forceOption);
 
     QCommandLineOption dryRunOption(QStringLiteral("dry-run"),
                                     QStringLiteral("Simulation mode. Behave normally, but do not copy/update any files."));
-    parser->addOption(dryRunOption);
+    m_parser.addOption(dryRunOption);
 
     QCommandLineOption noPluginsOption(QStringLiteral("no-plugins"),
                                        QStringLiteral("Skip plugin deployment."));
-    parser->addOption(noPluginsOption);
+    m_parser.addOption(noPluginsOption);
 
     QCommandLineOption noLibraryOption(QStringLiteral("no-libraries"),
                                        QStringLiteral("Skip library deployment."));
-    parser->addOption(noLibraryOption);
+    m_parser.addOption(noLibraryOption);
 
     QCommandLineOption qmlDirOption(QStringLiteral("qmldir"),
                                     QStringLiteral("Scan for QML-imports starting from directory."),
                                     QStringLiteral("directory"));
-    parser->addOption(qmlDirOption);
+    m_parser.addOption(qmlDirOption);
 
     QCommandLineOption noQuickImportOption(QStringLiteral("no-quick-import"),
                                            QStringLiteral("Skip deployment of Qt Quick imports."));
-    parser->addOption(noQuickImportOption);
+    m_parser.addOption(noQuickImportOption);
 
     QCommandLineOption noTranslationOption(QStringLiteral("no-translations"),
                                            QStringLiteral("Skip deployment of translations."));
-    parser->addOption(noTranslationOption);
+    m_parser.addOption(noTranslationOption);
 
     QCommandLineOption noSystemD3DCompilerOption(QStringLiteral("no-system-d3d-compiler"),
                                                  QStringLiteral("Skip deployment of the system D3D compiler."));
-    parser->addOption(noSystemD3DCompilerOption);
+    m_parser.addOption(noSystemD3DCompilerOption);
 
 
     QCommandLineOption compilerRunTimeOption(QStringLiteral("compiler-runtime"),
                                              QStringLiteral("Deploy compiler runtime (Desktop only)."));
-    parser->addOption(compilerRunTimeOption);
+    m_parser.addOption(compilerRunTimeOption);
 
     QCommandLineOption noCompilerRunTimeOption(QStringLiteral("no-compiler-runtime"),
                                                QStringLiteral("Do not deploy compiler runtime (Desktop only)."));
-    parser->addOption(noCompilerRunTimeOption);
+    m_parser.addOption(noCompilerRunTimeOption);
 
     QCommandLineOption webKitOption(QStringLiteral("webkit2"),
                                     QStringLiteral("Deployment of WebKit2 (web process)."));
-    parser->addOption(webKitOption);
+    m_parser.addOption(webKitOption);
 
     QCommandLineOption noWebKitOption(QStringLiteral("no-webkit2"),
                                       QStringLiteral("Skip deployment of WebKit2."));
-    parser->addOption(noWebKitOption);
+    m_parser.addOption(noWebKitOption);
 
     QCommandLineOption jsonOption(QStringLiteral("json"),
                                   QStringLiteral("Print to stdout in JSON format."));
-    parser->addOption(jsonOption);
+    m_parser.addOption(jsonOption);
 
     QCommandLineOption angleOption(QStringLiteral("angle"),
                                    QStringLiteral("Force deployment of ANGLE."));
-    parser->addOption(angleOption);
+    m_parser.addOption(angleOption);
 
     QCommandLineOption noAngleOption(QStringLiteral("no-angle"),
                                      QStringLiteral("Disable deployment of ANGLE."));
-    parser->addOption(noAngleOption);
+    m_parser.addOption(noAngleOption);
 
     QCommandLineOption listOption(QStringLiteral("list"),
                                   QLatin1String("Print only the names of the files copied.\n"
@@ -221,14 +221,14 @@ int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLine
                                                 "            target, suitable for use within an\n"
                                                 "            Appx mapping file"),
                                   QStringLiteral("option"));
-    parser->addOption(listOption);
+    m_parser.addOption(listOption);
 
     QCommandLineOption verboseOption(QStringLiteral("verbose"),
                                      QStringLiteral("Verbose level."),
                                      QStringLiteral("level"));
-    parser->addOption(verboseOption);
+    m_parser.addOption(verboseOption);
 
-    parser->addPositionalArgument(QStringLiteral("[files]"),
+    m_parser.addPositionalArgument(QStringLiteral("[files]"),
                                   QStringLiteral("Binaries or directory containing the binary."));
 
     OptionMaskVector enabledModules;
@@ -238,34 +238,34 @@ int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLine
         const QString name = QLatin1String(qtModuleEntryByIndex(i).libraryName);
         const QString enabledDescription = QStringLiteral("Add ") + name + QStringLiteral(" module.");
         CommandLineOptionPtr enabledOption(new QCommandLineOption(option, enabledDescription));
-        parser->addOption(*enabledOption.data());
+        m_parser.addOption(*enabledOption.data());
         enabledModules.push_back(OptionMaskPair(enabledOption, qtModuleEntryByIndex(i).module));
 
         const QString disabledDescription = QStringLiteral("Remove ") + name + QStringLiteral(" module.");
         CommandLineOptionPtr disabledOption(new QCommandLineOption(QStringLiteral("no-") + option,
                                                                    disabledDescription));
         disabledModules.push_back(OptionMaskPair(disabledOption, qtModuleEntryByIndex(i).module));
-        parser->addOption(*disabledOption.data());
+        m_parser.addOption(*disabledOption.data());
     }
 
-    const bool success = parser->parse(arguments);
-    if (parser->isSet(helpOption))
+    const bool success = m_parser.parse(arguments);
+    if (m_parser.isSet(helpOption))
         return CommandLineParseHelpRequested;
     if (!success) {
-        *errorMessage = parser->errorText();
+        *errorMessage = m_parser.errorText();
         return CommandLineParseError;
     }
 
-    options->libraryDirectory = parser->value(libDirOption);
-    options->plugins = !parser->isSet(noPluginsOption);
-    options->libraries = !parser->isSet(noLibraryOption);
-    options->translations = !parser->isSet(noTranslationOption);
-    options->systemD3dCompiler = !parser->isSet(noSystemD3DCompilerOption);
-    options->quickImports = !parser->isSet(noQuickImportOption);
+    options->libraryDirectory = m_parser.value(libDirOption);
+    options->plugins = !m_parser.isSet(noPluginsOption);
+    options->libraries = !m_parser.isSet(noLibraryOption);
+    options->translations = !m_parser.isSet(noTranslationOption);
+    options->systemD3dCompiler = !m_parser.isSet(noSystemD3DCompilerOption);
+    options->quickImports = !m_parser.isSet(noQuickImportOption);
 
-    if (parser->isSet(compilerRunTimeOption))
+    if (m_parser.isSet(compilerRunTimeOption))
         options->compilerRunTime = true;
-    else if (parser->isSet(noCompilerRunTimeOption))
+    else if (m_parser.isSet(noCompilerRunTimeOption))
         options->compilerRunTime = false;
 
     if (options->compilerRunTime && options->platform != WindowsMinGW && options->platform != Windows) {
@@ -273,11 +273,11 @@ int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLine
         return CommandLineParseError;
     }
 
-    if (parser->isSet(releaseWithDebugInfoOption)) {
+    if (m_parser.isSet(releaseWithDebugInfoOption)) {
         options->debugMatchAll = true; // PE analysis will detect "debug", turn off matching.
         options->debugDetection = Options::DebugDetectionForceRelease;
     } else {
-        switch (parseExclusiveOptions(parser, debugOption, releaseOption)) {
+        switch (parseExclusiveOptions(debugOption, releaseOption)) {
         case OptionAuto:
             break;
         case OptionEnabled:
@@ -289,7 +289,7 @@ int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLine
         }
     }
 
-    switch (parseExclusiveOptions(parser, angleOption, noAngleOption)) {
+    switch (parseExclusiveOptions(angleOption, noAngleOption)) {
     case OptionAuto:
         break;
     case OptionEnabled:
@@ -300,17 +300,17 @@ int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLine
         break;
     }
 
-    m_optWebKit2 = parseExclusiveOptions(parser, webKitOption, noWebKitOption);
+    m_optWebKit2 = parseExclusiveOptions(webKitOption, noWebKitOption);
 
-    if (parser->isSet(forceOption))
+    if (m_parser.isSet(forceOption))
         options->updateFileFlags |= ForceUpdateFile;
-    if (parser->isSet(dryRunOption))
+    if (m_parser.isSet(dryRunOption))
         options->updateFileFlags |= SkipUpdateFile;
 
     for (size_t i = 0; i < qtModuleEntryCount(); ++i) {
-        if (parser->isSet(*enabledModules.at(int(i)).first.data()))
+        if (m_parser.isSet(*enabledModules.at(int(i)).first.data()))
             options->additionalLibraries |= enabledModules.at(int(i)).second;
-        if (parser->isSet(*disabledModules.at(int(i)).first.data()))
+        if (m_parser.isSet(*disabledModules.at(int(i)).first.data()))
             options->disabledLibraries |= disabledModules.at(int(i)).second;
     }
 
@@ -322,8 +322,8 @@ int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLine
     if (options->additionalLibraries & QtDesignerComponents)
         options->additionalLibraries |= QtDesignerModule;
 
-    if (parser->isSet(listOption)) {
-        const QString value = parser->value(listOption);
+    if (m_parser.isSet(listOption)) {
+        const QString value = m_parser.value(listOption);
         if (value == QStringLiteral("source")) {
             options->list = ListSource;
         } else if (value == QStringLiteral("target")) {
@@ -338,13 +338,13 @@ int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLine
         }
     }
 
-    if (parser->isSet(jsonOption) || options->list) {
+    if (m_parser.isSet(jsonOption) || options->list) {
         optVerboseLevel = 0;
         options->json = new JsonOutput;
     } else {
-        if (parser->isSet(verboseOption)) {
+        if (m_parser.isSet(verboseOption)) {
             bool ok;
-            const QString value = parser->value(verboseOption);
+            const QString value = m_parser.value(verboseOption);
             optVerboseLevel = value.toInt(&ok);
             if (!ok || optVerboseLevel < 0) {
                 *errorMessage = QStringLiteral("Invalid value \"%1\" passed for verbose level.").arg(value);
@@ -353,17 +353,17 @@ int CommandLineParser::parseArguments(const QStringList &arguments, QCommandLine
         }
     }
 
-    const QStringList posArgs = parser->positionalArguments();
+    const QStringList posArgs = m_parser.positionalArguments();
     if (posArgs.isEmpty()) {
         *errorMessage = QStringLiteral("Please specify the binary or folder.");
         return CommandLineParseError | CommandLineParseHelpRequested;
     }
 
-    if (parser->isSet(dirOption))
-        options->directory = parser->value(dirOption);
+    if (m_parser.isSet(dirOption))
+        options->directory = m_parser.value(dirOption);
 
-    if (parser->isSet(qmlDirOption))
-        options->qmlDirectories = parser->values(qmlDirOption);
+    if (m_parser.isSet(qmlDirOption))
+        options->qmlDirectories = m_parser.values(qmlDirOption);
 
     const QString &file = posArgs.front();
     const QFileInfo fi(QDir::cleanPath(file));
